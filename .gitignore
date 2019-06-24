@@ -11,3 +11,4 @@ project.properties
 dependency-reduced-pom.xml
 *.exe
 *.zip
+!SanLiteSetup.exe
