@@ -212,6 +212,12 @@
 										<include>**</include>
 									</includes>
 								</filter>
+                                <filter>
+                                    <artifact>net.runelite.pushingpixels:*</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
 							</filters>
 						</configuration>
 					</execution>

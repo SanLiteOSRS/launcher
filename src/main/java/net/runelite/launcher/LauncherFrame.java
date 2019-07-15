@@ -36,6 +36,7 @@ import javax.swing.plaf.basic.BasicProgressBarUI;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 
 @Slf4j
 class LauncherFrame extends JFrame
@@ -49,7 +50,14 @@ class LauncherFrame extends JFrame
 
 	LauncherFrame()
 	{
-		SwingUtilities.invokeLater(this::initLayout);
+		try
+		{
+			SwingUtilities.invokeAndWait(this::initLayout);
+		}
+		catch (InterruptedException | InvocationTargetException e)
+		{
+			e.printStackTrace();
+		}
 	}
 
 	private void initLayout()
@@ -58,9 +66,9 @@ class LauncherFrame extends JFrame
 
 		this.setTitle("SanLite");
 		this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+		this.setSize(new Dimension(220, 280));
 		this.setPreferredSize(new Dimension(220, 280));
 		this.setLayout(new BorderLayout());
-		this.setLocationRelativeTo(null);
 		this.setUndecorated(true);
 
 		messageLabel = new JLabel("Checking for updates");
