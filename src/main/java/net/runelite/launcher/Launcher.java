@@ -33,13 +33,16 @@ import com.google.common.hash.Hashing;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import com.google.gson.Gson;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import joptsimple.ArgumentAcceptingOptionSpec;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.launcher.beans.Artifact;
+import net.runelite.launcher.beans.Bootstrap;
+import org.slf4j.LoggerFactory;
+
+import javax.swing.*;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -50,23 +53,8 @@ import java.security.SignatureException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.Objects;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
-import javax.swing.UIManager;
-import joptsimple.ArgumentAcceptingOptionSpec;
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
-import lombok.extern.slf4j.Slf4j;
-import net.runelite.launcher.beans.Artifact;
-import net.runelite.launcher.beans.Bootstrap;
-import org.slf4j.LoggerFactory;
 
 @Slf4j
 public class Launcher
@@ -74,11 +62,13 @@ public class Launcher
 	private static final File RUNELITE_DIR = new File(System.getProperty("user.home"), ".sanlite");
 	private static final File LOGS_DIR = new File(RUNELITE_DIR, "logs");
 	private static final File REPO_DIR = new File(RUNELITE_DIR, "repository2");
-	private static final String CLIENT_BOOTSTRAP_URL = "https://raw.githubusercontent.com/sanliteosrs/maven-repo/master/live/bootstrap.json";
+	private static final String CLIENT_BOOTSTRAP_LIVE_URL = "https://raw.githubusercontent.com/sanliteosrs/maven-repo/master/live/bootstrap.json";
+	private static final String CLIENT_BOOTSTRAP_STAGING_URL = "https://raw.githubusercontent.com/sanliteosrs/maven-repo/master/staging/bootstrap.json";
 	private static final String CLIENT_BOOTSTRAP_SHA256_URL = "https://static.runelite.net/bootstrap.json.sha256";
 	private static final LauncherProperties PROPERTIES = new LauncherProperties();
-	private static final String USER_AGENT = "SanLite/" + PROPERTIES.getVersion();
+	private static final String USER_AGENT = "RuneLite/" + PROPERTIES.getVersion();
 	private static final boolean enforceDependencyHashing = true;
+	private static boolean isStaging;
 
 	static final String CLIENT_MAIN_CLASS = "net.runelite.client.RuneLite";
 
@@ -88,6 +78,7 @@ public class Launcher
 		parser.accepts("clientargs").withRequiredArg();
 		parser.accepts("nojvm");
 		parser.accepts("debug");
+		parser.accepts("staging");
 
 		HardwareAccelerationMode defaultMode;
 		switch (OS.getOs())
@@ -106,9 +97,9 @@ public class Launcher
 
 		// Create typed argument for the hardware acceleration mode
 		final ArgumentAcceptingOptionSpec<HardwareAccelerationMode> mode = parser.accepts("mode")
-			.withRequiredArg()
-			.ofType(HardwareAccelerationMode.class)
-			.defaultsTo(defaultMode);
+				.withRequiredArg()
+				.ofType(HardwareAccelerationMode.class)
+				.defaultsTo(defaultMode);
 
 		OptionSet options = parser.parse(args);
 
@@ -136,6 +127,8 @@ public class Launcher
 				log.debug("  {}: {}", key, value);
 			}
 		}
+
+		isStaging = options.has("debug");
 
 		// Get hardware acceleration mode
 		final HardwareAccelerationMode hardwareAccelerationMode = options.valueOf(mode);
@@ -170,7 +163,7 @@ public class Launcher
 		{
 			bootstrap = getBootstrap();
 		}
-		catch (IOException | VerificationException | CertificateException | SignatureException | InvalidKeyException | NoSuchAlgorithmException ex)
+		catch (IOException | CertificateException | SignatureException | InvalidKeyException | NoSuchAlgorithmException ex)
 		{
 			log.error("Error fetching bootstrap", ex);
 			frame.setVisible(false);
@@ -201,8 +194,8 @@ public class Launcher
 		}
 
 		List<File> results = Arrays.stream(bootstrap.getArtifacts())
-			.map(dep -> new File(REPO_DIR, dep.getName()))
-			.collect(Collectors.toList());
+				.map(dep -> new File(REPO_DIR, dep.getName()))
+				.collect(Collectors.toList());
 
 		try
 		{
@@ -261,19 +254,27 @@ public class Launcher
 		}
 	}
 
-	private static Bootstrap getBootstrap() throws IOException, CertificateException, NoSuchAlgorithmException, InvalidKeyException, SignatureException, VerificationException
+	private static Bootstrap getBootstrap() throws IOException, CertificateException, NoSuchAlgorithmException, InvalidKeyException, SignatureException
 	{
-		URL u = new URL(CLIENT_BOOTSTRAP_URL);
+		URL bootstrapUrl;
 		URL signatureUrl = new URL(CLIENT_BOOTSTRAP_SHA256_URL);
 
-		URLConnection conn = u.openConnection();
+		if (isStaging)
+		{
+			bootstrapUrl = new URL(CLIENT_BOOTSTRAP_STAGING_URL);
+		}
+		else
+		{
+			bootstrapUrl = new URL(CLIENT_BOOTSTRAP_LIVE_URL);
+		}
+
+		URLConnection conn = bootstrapUrl.openConnection();
 		URLConnection signatureConn = signatureUrl.openConnection();
 
 		conn.setRequestProperty("User-Agent", USER_AGENT);
 		signatureConn.setRequestProperty("User-Agent", USER_AGENT);
 
-		try (InputStream i = conn.getInputStream();
-			InputStream signatureIn = signatureConn.getInputStream())
+		try (InputStream i = conn.getInputStream(); InputStream signatureIn = signatureConn.getInputStream())
 		{
 			byte[] bytes = ByteStreams.toByteArray(i);
 			byte[] signature = ByteStreams.toByteArray(signatureIn);
@@ -296,13 +297,17 @@ public class Launcher
 			clientArgs = (String) options.valueOf("clientargs");
 		}
 		return !Strings.isNullOrEmpty(clientArgs)
-			? new ArrayList<>(Splitter.on(' ').omitEmptyStrings().trimResults().splitToList(clientArgs))
-			: new ArrayList<>();
+				? new ArrayList<>(Splitter.on(' ').omitEmptyStrings().trimResults().splitToList(clientArgs))
+				: new ArrayList<>();
 	}
 
 	private static void download(LauncherFrame frame, Bootstrap bootstrap) throws IOException
 	{
 		Artifact[] artifacts = bootstrap.getArtifacts();
+		int totalDownloadSize = getTotalArtifactsSize(artifacts);
+		int downloadedBytes = 0;
+		boolean isDownloading = false;
+
 		for (Artifact artifact : artifacts)
 		{
 			File dest = new File(REPO_DIR, artifact.getName());
@@ -323,25 +328,40 @@ public class Launcher
 				continue;
 			}
 
+			if (!isDownloading)
+			{
+				frame.updateMessageLabelText("Downloading latest update");
+				isDownloading = true;
+			}
 			log.debug("Downloading {}", artifact.getName());
 
 			URL url = new URL(artifact.getPath());
 			URLConnection conn = url.openConnection();
 			conn.setRequestProperty("User-Agent", USER_AGENT);
-			try (InputStream in = conn.getInputStream();
-				FileOutputStream fout = new FileOutputStream(dest))
+			try (InputStream in = conn.getInputStream(); FileOutputStream fout = new FileOutputStream(dest))
 			{
 				int i;
-				int bytes = 0;
 				byte[] buffer = new byte[1024 * 1024];
 				while ((i = in.read(buffer)) != -1)
 				{
-					bytes += i;
+					downloadedBytes += i;
 					fout.write(buffer, 0, i);
-					frame.progress(artifact.getName(), bytes, artifact.getSize());
+					frame.progress(downloadedBytes, totalDownloadSize);
 				}
 			}
 		}
+		// Set progress bar to 100% if all files are verified and none updated
+		frame.progress(100, 100);
+	}
+
+	private static int getTotalArtifactsSize(Artifact[] artifacts)
+	{
+		int totalSize = 0;
+		for (Artifact artifact : artifacts)
+		{
+			totalSize += artifact.getSize();
+		}
+		return totalSize;
 	}
 
 	private static void clean(Artifact[] artifacts)
@@ -354,8 +374,8 @@ public class Launcher
 		}
 
 		Set<String> artifactNames = Arrays.stream(artifacts)
-			.map(Artifact::getName)
-			.collect(Collectors.toSet());
+				.map(Artifact::getName)
+				.collect(Collectors.toSet());
 
 		for (File file : existingFiles)
 		{
@@ -410,7 +430,6 @@ public class Launcher
 	private static Certificate getCertificate() throws CertificateException
 	{
 		CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-		Certificate certificate = certFactory.generateCertificate(Launcher.class.getResourceAsStream("/runelite.crt"));
-		return certificate;
+		return certFactory.generateCertificate(Launcher.class.getResourceAsStream("/runelite.crt"));
 	}
 }

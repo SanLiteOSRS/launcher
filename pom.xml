@@ -61,6 +61,15 @@
 			<name>SanLite</name>
 			<url>https://raw.githubusercontent.com/sanliteosrs/maven-repo/master</url>
 		</repository>
+        <repository>
+            <id>runelite</id>
+            <name>RuneLite</name>
+            <url>http://repo.runelite.net</url>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+        </repository>
 		<repository>
 			<id>jitpack.io</id>
 			<url>https://jitpack.io</url>
@@ -118,7 +127,11 @@
 			<version>${packr.version}</version>
 			<scope>provided</scope>
 		</dependency>
-
+        <dependency>
+            <groupId>net.runelite.pushingpixels</groupId>
+            <artifactId>substance</artifactId>
+            <version>8.0.02</version>
+        </dependency>
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
@@ -148,7 +161,9 @@
 				<excludes>
 					<exclude>*.ico</exclude>
 					<exclude>*.bmp</exclude>
-					<exclude>logback.xml</exclude>
+                    <exclude>*.png</exclude>
+                    <exclude>**/*.ttf</exclude>
+                    <exclude>logback.xml</exclude>
 				</excludes>
 				<filtering>true</filtering>
 			</resource>
@@ -157,6 +172,8 @@
 				<includes>
 					<include>*.ico</include>
 					<include>*.bmp</include>
+					<include>*.png</include>
+                    <include>**/*.ttf</include>
 					<include>logback.xml</include>
 				</includes>
 				<filtering>false</filtering>
