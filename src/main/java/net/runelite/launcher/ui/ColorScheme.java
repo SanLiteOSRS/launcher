@@ -39,4 +39,7 @@ public class ColorScheme
 
 	public static final Color DARKER_GRAY_COLOR = new Color(30, 30, 30);
 	public static final Color DARK_GRAY_COLOR = new Color(40, 40, 40);
+
+	public static final Color LIGHT_GRAY_COLOR = new Color(198, 198, 198);
+	public static final Color MEDIUM_GRAY_COLOR = new Color(138, 138, 138);
 }

@@ -104,14 +104,15 @@ class LauncherFrame extends JFrame
 
 		// Title
 		final JLabel title = new JLabel("SanLite");
+		title.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		final GridBagConstraints titleConstraints = new GridBagConstraints();
 		titleConstraints.gridy = 1;
 		panel.add(title, titleConstraints);
 
 		// SanLite version
 		final JLabel sanliteVersion = new JLabel("Launcher version " + PROPERTIES.getVersion());
+		sanliteVersion.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
 		sanliteVersion.setFont(FontManager.getRunescapeSmallFont());
-		sanliteVersion.setForeground(sanliteVersion.getForeground().darker());
 		final GridBagConstraints sanliteVersionConstraints = new GridBagConstraints();
 		sanliteVersionConstraints.gridy = 2;
 		panel.add(sanliteVersion, sanliteVersionConstraints);
@@ -130,13 +131,14 @@ class LauncherFrame extends JFrame
 
 		// Main message
 		messageLabel.setFont(FontManager.getRunescapeSmallFont());
+		messageLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		final GridBagConstraints messageConstraints = new GridBagConstraints();
 		messageConstraints.gridy = 4;
 		panel.add(messageLabel, messageConstraints);
 
 		// Alternate message
 		final GridBagConstraints subMessageConstraints = new GridBagConstraints();
-		subMessageLabel.setForeground(subMessageLabel.getForeground().darker());
+		subMessageLabel.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
 		subMessageLabel.setFont(FontManager.getRunescapeSmallFont());
 		subMessageConstraints.gridy = 5;
 		panel.add(subMessageLabel, subMessageConstraints);
