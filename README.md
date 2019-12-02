@@ -1,9 +1,9 @@
 ![](https://i.imgur.com/DrOHIyS.png)
-# SanLite Launcher [![Discord](https://img.shields.io/discord/301755382160818177.svg)](https://discord.gg/rRMNYz8)
+# SanLite Launcher [![Discord](https://img.shields.io/discord/634166880411713576?style=flat-square)](https://discord.gg/hNgWmk6)
 
 This repository holds the launcher for the SanLite client.
 
-If you have any questions, please join our our [Discord](https://discord.gg/rRMNYz8) server.
+If you have any questions, please join our our [Discord](https://discord.gg/hNgWmk6) server.
 
 ### License
 
