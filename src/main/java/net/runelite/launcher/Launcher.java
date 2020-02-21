@@ -128,7 +128,7 @@ public class Launcher
 			}
 		}
 
-		isStaging = options.has("debug");
+		isStaging = options.has("staging");
 
 		// Get hardware acceleration mode
 		final HardwareAccelerationMode hardwareAccelerationMode = options.valueOf(mode);
