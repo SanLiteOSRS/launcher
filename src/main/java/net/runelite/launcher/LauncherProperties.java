@@ -32,12 +32,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class LauncherProperties
 {
-	private static final String LAUNCHER_VERSION = "sanlite.launcher.version";
-	private final Properties properties = new Properties();
+	private static final String LAUNCHER_VERSION = "runelite.launcher.version";
+	private static final String DISCORD_INVITE = "runelite.discord.invite";
+	private static final String TROUBLESHOOTING_LINK = "runelite.wiki.troubleshooting.link";
+	private static final String DNS_CHANGE_LINK = "runelite.dnschange.link";
+	private static final String DOWNLOAD_LINK = "runelite.download.link";
+	private static final String BOOTSTRAP_LIVE = "runelite.bootstrap";
+	private static final String BOOTSTRAP_LIVE_FALLBACK = "runelite.bootstrap.fallback";
+	private static final String BOOTSTRAP_STAGING = "runelite.bootstrap.staging";
+	private static final String BOOTSTRAP_STAGING_FALLBACK = "runelite.bootstrap.staging.fallback";
+	private static final String MAIN = "runelite.main";
 
-	LauncherProperties()
+	private static final Properties properties = new Properties();
+
+	static
 	{
-		final InputStream in = getClass().getResourceAsStream("launcher.properties");
+		final InputStream in = LauncherProperties.class.getResourceAsStream("launcher.properties");
 
 		try
 		{
@@ -49,13 +59,58 @@ public class LauncherProperties
 		}
 	}
 
-	public String getVersionKey()
+	public static String getVersionKey()
 	{
 		return LAUNCHER_VERSION;
 	}
 
-	public String getVersion()
+	public static String getVersion()
 	{
 		return properties.getProperty(LAUNCHER_VERSION);
+	}
+
+	public static String getDiscordInvite()
+	{
+		return properties.getProperty(DISCORD_INVITE);
+	}
+
+	public static String getTroubleshootingLink()
+	{
+		return properties.getProperty(TROUBLESHOOTING_LINK);
+	}
+
+	public static String getDNSChangeLink()
+	{
+		return properties.getProperty(DNS_CHANGE_LINK);
+	}
+
+	public static String getDownloadLink()
+	{
+		return properties.getProperty(DOWNLOAD_LINK);
+	}
+
+	public static String getBootstrapLive()
+	{
+		return properties.getProperty(BOOTSTRAP_LIVE);
+	}
+
+	public static String getBootstrapLiveFallback()
+	{
+		return properties.getProperty(BOOTSTRAP_LIVE_FALLBACK);
+	}
+
+	public static String getBootstrapStaging()
+	{
+		return properties.getProperty(BOOTSTRAP_STAGING);
+	}
+
+	public static String getBootstrapStagingFallback()
+	{
+		return properties.getProperty(BOOTSTRAP_STAGING_FALLBACK);
+	}
+
+	public static String getMain()
+	{
+		return properties.getProperty(MAIN);
 	}
 }

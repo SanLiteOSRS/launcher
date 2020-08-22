@@ -25,7 +25,6 @@
 package net.runelite.launcher;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -34,7 +33,6 @@ import java.util.Collection;
 import java.util.List;
 import javax.swing.UIManager;
 import lombok.extern.slf4j.Slf4j;
-import static net.runelite.launcher.Launcher.CLIENT_MAIN_CLASS;
 
 @Slf4j
 class ReflectionLauncher
@@ -49,19 +47,7 @@ class ReflectionLauncher
 			jarUrls[i++] = file.toURI().toURL();
 		}
 
-		// Needed for support on JDK9+
-		ClassLoader parent;
-
-		try
-		{
-			Method getPlatformClassLoaderMethod =  ClassLoader.class.getMethod("getPlatformClassLoader");
-			parent = (ClassLoader) getPlatformClassLoaderMethod.invoke(null);
-		}
-		catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException ex)
-		{
-			parent = null;
-		}
-
+		ClassLoader parent = ClassLoader.getPlatformClassLoader();
 		URLClassLoader loader = new URLClassLoader(jarUrls, parent);
 
 		UIManager.put("ClassLoader", loader); // hack for Substance
@@ -71,7 +57,7 @@ class ReflectionLauncher
 			{
 				try
 				{
-					Class<?> mainClass = loader.loadClass(CLIENT_MAIN_CLASS);
+					Class<?> mainClass = loader.loadClass(LauncherProperties.getMain());
 
 					Method main = mainClass.getMethod("main", String[].class);
 					main.invoke(null, (Object) clientArgs.toArray(new String[0]));
@@ -84,5 +70,7 @@ class ReflectionLauncher
 		};
 		thread.setName("SanLite");
 		thread.start();
+
+		SplashScreen.stop();
 	}
 }

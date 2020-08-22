@@ -32,19 +32,27 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.launcher.beans.Bootstrap;
 
 @Slf4j
-public class PackrConfig
+class PackrConfig
 {
 	// Update the packr vmargs
-	public static void updateLauncherArgs(Bootstrap bootstrap)
+	static void updateLauncherArgs(Bootstrap bootstrap, Collection<String> extraJvmArgs)
 	{
 		File configFile = new File("config.json").getAbsoluteFile();
 
-		if (!configFile.exists())
+		// The AppImage mounts the packr directory on a readonly filesystem, so we can't update the vm args there
+		if (!configFile.exists() || !configFile.canWrite())
 		{
 			return;
 		}
@@ -59,26 +67,51 @@ public class PackrConfig
 		}
 		catch (IOException e)
 		{
-			log.warn("Error updating packr vm args!", e);
+			log.warn("error updating packr vm args!", e);
 			return;
 		}
 
-		String[] args = getArgs(bootstrap);
-		if (args == null || args.length == 0)
+		String[] argsArr = getArgs(bootstrap);
+		if (argsArr == null || argsArr.length == 0)
 		{
 			log.warn("Launcher args are empty");
 			return;
 		}
 
+		// Insert JVM arguments to config.json because some of them require restart
+		List<String> args = new ArrayList<>();
+		args.addAll(Arrays.asList(argsArr));
+		args.addAll(extraJvmArgs);
+
 		config.put("vmArgs", args);
 
-		try (PrintWriter writer = new PrintWriter(new FileOutputStream(configFile)))
+		File tmpFile = new File("config.json.tmp");
+		try
 		{
-			writer.write(gson.toJson(config));
+			try (FileOutputStream fout = new FileOutputStream(tmpFile))
+			{
+				fout.getChannel().lock();
+				try (PrintWriter writer = new PrintWriter(fout))
+				{
+					writer.write(gson.toJson(config));
+				}
+				// FileOutputStream.close() closes the associated channel, which frees the lock
+			}
+
+			try
+			{
+				Files.move(tmpFile.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			}
+			catch (AtomicMoveNotSupportedException ex)
+			{
+				log.debug("atomic move not supported", ex);
+				Files.move(tmpFile.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			}
 		}
 		catch (IOException e)
 		{
-			log.warn("Error updating packr vm args!", e);
+			log.warn("error updating packr vm args!", e);
+			tmpFile.delete(); // best effort
 		}
 	}
 
@@ -87,20 +120,20 @@ public class PackrConfig
 		switch (OS.getOs())
 		{
 			case Windows:
-				if (bootstrap.getLauncherWindowsArguments() != null)
+				if (bootstrap.getLauncherJvm11WindowsArguments() != null)
 				{
-					return bootstrap.getLauncherWindowsArguments();
+					return bootstrap.getLauncherJvm11WindowsArguments();
 				}
-				return bootstrap.getLauncherArguments();
+				return bootstrap.getLauncherJvm11Arguments();
 			case MacOS:
-				if (bootstrap.getLauncherMacArguments() != null)
+				if (bootstrap.getLauncherJvm11MacArguments() != null)
 				{
-					return bootstrap.getLauncherMacArguments();
+					return bootstrap.getLauncherJvm11MacArguments();
 				}
-				return bootstrap.getLauncherArguments();
+				return bootstrap.getLauncherJvm11Arguments();
 
 			default:
-				return bootstrap.getLauncherArguments();
+				return bootstrap.getLauncherJvm11Arguments();
 		}
 	}
 }

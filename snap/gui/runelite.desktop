@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SanLite
+Comment=A popular free, open-source and super fast client for Old School RuneScape
+Exec=sanlite
+Icon=${SNAP}/meta/gui/runelite.png
+Type=Application
+Categories=Game;
+StartupNotify=false
+Keywords=rs;osrs;old;school;runescape

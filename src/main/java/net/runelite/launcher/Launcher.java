@@ -26,14 +26,49 @@ package net.runelite.launcher;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
+import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import com.google.gson.Gson;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
+import java.util.function.IntConsumer;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import javax.swing.SwingUtilities;
 import joptsimple.ArgumentAcceptingOptionSpec;
+import joptsimple.OptionException;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import lombok.extern.slf4j.Slf4j;
@@ -41,36 +76,14 @@ import net.runelite.launcher.beans.Artifact;
 import net.runelite.launcher.beans.Bootstrap;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.*;
-import java.io.*;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLConnection;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.Signature;
-import java.security.SignatureException;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
-import java.util.*;
-import java.util.stream.Collectors;
-
 @Slf4j
 public class Launcher
 {
 	private static final File RUNELITE_DIR = new File(System.getProperty("user.home"), ".sanlite");
-	private static final File LOGS_DIR = new File(RUNELITE_DIR, "logs");
+	public static final File LOGS_DIR = new File(RUNELITE_DIR, "logs");
 	private static final File REPO_DIR = new File(RUNELITE_DIR, "repository2");
-	private static final String CLIENT_BOOTSTRAP_LIVE_URL = "https://raw.githubusercontent.com/sanliteosrs/maven-repo/master/live/bootstrap.json";
-	private static final String CLIENT_BOOTSTRAP_STAGING_URL = "https://raw.githubusercontent.com/sanliteosrs/maven-repo/master/staging/bootstrap.json";
-	private static final String CLIENT_BOOTSTRAP_SHA256_URL = "https://static.runelite.net/bootstrap.json.sha256";
-	private static final LauncherProperties PROPERTIES = new LauncherProperties();
-	private static final String USER_AGENT = "RuneLite/" + PROPERTIES.getVersion();
-	private static final boolean enforceDependencyHashing = true;
-	private static boolean isStaging;
-
-	static final String CLIENT_MAIN_CLASS = "net.runelite.client.RuneLite";
+	public static final File CRASH_FILES = new File(LOGS_DIR, "jvm_crash_pid_%p.log");
+	private static final String USER_AGENT = "RuneLite/" + LauncherProperties.getVersion();
 
 	public static void main(String[] args)
 	{
@@ -78,7 +91,13 @@ public class Launcher
 		parser.accepts("clientargs").withRequiredArg();
 		parser.accepts("nojvm");
 		parser.accepts("debug");
+		parser.accepts("insecure-skip-tls-verification");
 		parser.accepts("staging");
+
+		if (OS.getOs() == OS.OSType.MacOS)
+		{
+			parser.accepts("psn").withRequiredArg();
+		}
 
 		HardwareAccelerationMode defaultMode;
 		switch (OS.getOs())
@@ -87,9 +106,9 @@ public class Launcher
 				defaultMode = HardwareAccelerationMode.DIRECTDRAW;
 				break;
 			case MacOS:
-			case Linux:
 				defaultMode = HardwareAccelerationMode.OPENGL;
 				break;
+			case Linux:
 			default:
 				defaultMode = HardwareAccelerationMode.OFF;
 				break;
@@ -97,11 +116,22 @@ public class Launcher
 
 		// Create typed argument for the hardware acceleration mode
 		final ArgumentAcceptingOptionSpec<HardwareAccelerationMode> mode = parser.accepts("mode")
-				.withRequiredArg()
-				.ofType(HardwareAccelerationMode.class)
-				.defaultsTo(defaultMode);
+			.withRequiredArg()
+			.ofType(HardwareAccelerationMode.class)
+			.defaultsTo(defaultMode);
 
-		OptionSet options = parser.parse(args);
+		OptionSet options;
+		try
+		{
+			options = parser.parse(args);
+		}
+		catch (OptionException ex)
+		{
+			log.error("unable to parse arguments", ex);
+			throw ex;
+		}
+
+		final boolean insecureSkipTlsVerification = options.has("insecure-skip-tls-verification");
 
 		// Setup debug
 		final boolean isDebug = options.has("debug");
@@ -113,135 +143,222 @@ public class Launcher
 			logger.setLevel(Level.DEBUG);
 		}
 
-		// Print out system info
-		if (log.isDebugEnabled())
+		try
 		{
-			log.debug("Java Environment:");
-			final Properties p = System.getProperties();
-			final Enumeration keys = p.keys();
+			SplashScreen.init();
+			SplashScreen.stage(0, "Preparing", "Setting up environment");
 
-			while (keys.hasMoreElements())
+			log.info("Launcher version {}", LauncherProperties.getVersion());
+
+			// Print out system info
+			if (log.isDebugEnabled())
 			{
-				final String key = (String) keys.nextElement();
-				final String value = (String) p.get(key);
-				log.debug("  {}: {}", key, value);
+				log.debug("Command line arguments: {}", String.join(" ", args));
+				log.debug("Java Environment:");
+				final Properties p = System.getProperties();
+				final Enumeration keys = p.keys();
+
+				while (keys.hasMoreElements())
+				{
+					final String key = (String) keys.nextElement();
+					final String value = (String) p.get(key);
+					log.debug("  {}: {}", key, value);
+				}
 			}
-		}
 
-		isStaging = options.has("staging");
+			// Get hardware acceleration mode
+			final HardwareAccelerationMode hardwareAccelerationMode = options.valueOf(mode);
+			log.info("Setting hardware acceleration to {}", hardwareAccelerationMode);
 
-		// Get hardware acceleration mode
-		final HardwareAccelerationMode hardwareAccelerationMode = options.valueOf(mode);
-		log.info("Setting hardware acceleration to {}", hardwareAccelerationMode);
+			// Enable hardware acceleration
+			final List<String> extraJvmParams = hardwareAccelerationMode.toParams();
 
-		// Enable hardware acceleration
-		final List<String> extraJvmParams = hardwareAccelerationMode.toParams();
+			// Always use IPv4 over IPv6
+			extraJvmParams.add("-Djava.net.preferIPv4Stack=true");
+			extraJvmParams.add("-Djava.net.preferIPv4Addresses=true");
 
-		// Always use IPv4 over IPv6
-		extraJvmParams.add("-Djava.net.preferIPv4Stack=true");
-		extraJvmParams.add("-Djava.net.preferIPv4Addresses=true");
+			// Stream launcher version
+			extraJvmParams.add("-D" + LauncherProperties.getVersionKey() + "=" + LauncherProperties.getVersion());
 
-		// Stream launcher version
-		extraJvmParams.add("-D" + PROPERTIES.getVersionKey() + "=" + PROPERTIES.getVersion());
+			if (insecureSkipTlsVerification)
+			{
+				extraJvmParams.add("-Drunelite.insecure-skip-tls-verification=true");
+			}
 
-		// Set all JVM params
-		setJvmParams(extraJvmParams);
+			// Set all JVM params
+			setJvmParams(extraJvmParams);
 
-		try
-		{
-			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-		}
-		catch (Exception ex)
-		{
-			log.warn("Unable to set cross platform look and feel", ex);
-		}
+			// Set hs_err_pid location (do this after setJvmParams because it can't be set at runtime)
+			log.debug("Setting JVM crash log location to {}", CRASH_FILES);
+			extraJvmParams.add("-XX:ErrorFile=" + CRASH_FILES.getAbsolutePath());
 
-		LauncherFrame frame = new LauncherFrame();
+			if (insecureSkipTlsVerification)
+			{
+				TrustManager trustManager = new X509TrustManager()
+				{
+					@Override
+					public void checkClientTrusted(X509Certificate[] chain, String authType)
+					{
+					}
 
-		Bootstrap bootstrap;
-		try
-		{
-			bootstrap = getBootstrap();
-		}
-		catch (IOException | CertificateException | SignatureException | InvalidKeyException | NoSuchAlgorithmException ex)
-		{
-			log.error("Error fetching bootstrap", ex);
-			frame.setVisible(false);
-			frame.dispose();
-			System.exit(-1);
-			return;
-		}
+					@Override
+					public void checkServerTrusted(X509Certificate[] chain, String authType)
+					{
+					}
 
-		// update packr vmargs
-		PackrConfig.updateLauncherArgs(bootstrap);
+					@Override
+					public X509Certificate[] getAcceptedIssuers()
+					{
+						return null;
+					}
+				};
 
-		REPO_DIR.mkdirs();
+				SSLContext sc = SSLContext.getInstance("SSL");
+				sc.init(null, new TrustManager[] {trustManager}, new SecureRandom());
+				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+				HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+			}
 
-		// Clean out old artifacts from the repository
-		clean(bootstrap.getArtifacts());
-
-		try
-		{
-			download(frame, bootstrap);
-		}
-		catch (IOException ex)
-		{
-			log.error("Unable to download artifacts", ex);
-			frame.setVisible(false);
-			frame.dispose();
-			System.exit(-1);
-			return;
-		}
-
-		List<File> results = Arrays.stream(bootstrap.getArtifacts())
-				.map(dep -> new File(REPO_DIR, dep.getName()))
-				.collect(Collectors.toList());
-
-		try
-		{
-			verifyJarHashes(bootstrap.getArtifacts());
-		}
-		catch (VerificationException ex)
-		{
-			log.error("Unable to verify artifacts", ex);
-			frame.setVisible(false);
-			frame.dispose();
-			System.exit(-1);
-			return;
-		}
-
-		frame.setVisible(false);
-		frame.dispose();
-
-		final Collection<String> clientArgs = getClientArgs(options);
-
-		if (log.isDebugEnabled())
-		{
-			clientArgs.add("--debug");
-		}
-
-		// packr doesn't let us specify command line arguments
-		if ("true".equals(System.getProperty("runelite.launcher.nojvm")) || options.has("nojvm"))
-		{
+			final boolean isStaging = options.has("staging");
+			SplashScreen.stage(.05, null, "Downloading bootstrap");
+			Bootstrap bootstrap;
 			try
 			{
-				ReflectionLauncher.launch(results, clientArgs);
-			}
-			catch (MalformedURLException ex)
-			{
-				log.error("Unable to launch client", ex);
-			}
-		}
-		else
-		{
-			try
-			{
-				JvmLauncher.launch(bootstrap, results, clientArgs, extraJvmParams);
+				bootstrap = getBootstrap(isStaging);
 			}
 			catch (IOException ex)
 			{
-				log.error("Unable to launch client", ex);
+				log.error("error fetching bootstrap", ex);
+				SwingUtilities.invokeLater(() -> FatalErrorDialog.showNetErrorWindow("downloading the bootstrap", ex));
+				return;
 			}
+
+			SplashScreen.stage(.10, null, "Tidying the cache");
+
+			boolean launcherTooOld = bootstrap.getRequiredLauncherVersion() != null &&
+				compareVersion(bootstrap.getRequiredLauncherVersion(), LauncherProperties.getVersion()) > 0;
+
+			boolean jvmTooOld = false;
+			try
+			{
+				if (bootstrap.getRequiredJVMVersion() != null)
+				{
+					jvmTooOld = Runtime.Version.parse(bootstrap.getRequiredJVMVersion())
+						.compareTo(Runtime.version()) > 0;
+				}
+			}
+			catch (IllegalArgumentException e)
+			{
+				log.warn("Unable to parse bootstrap version", e);
+			}
+
+			boolean nojvm = "true".equals(System.getProperty("runelite.launcher.nojvm"));
+
+			if (launcherTooOld || (nojvm && jvmTooOld))
+			{
+				SwingUtilities.invokeLater(() ->
+					new FatalErrorDialog("Your launcher is to old to start SanLite. Please download and install a more " +
+						"recent one from the SanLite repository.")
+						.addButton("SanLite repository", () -> LinkBrowser.browse(LauncherProperties.getDownloadLink()))
+						.open());
+				return;
+			}
+			if (jvmTooOld)
+			{
+				SwingUtilities.invokeLater(() ->
+					new FatalErrorDialog("Your Java installation is too old. SanLite now requires Java " +
+						bootstrap.getRequiredJVMVersion() + " to run. You can get a platform specific version from " +
+						"the SanLite GitHub page, or install a newer version of Java.")
+						.addButton("SanLite repository", () -> LinkBrowser.browse(LauncherProperties.getDownloadLink()))
+						.open());
+				return;
+			}
+
+			// update packr vmargs. The only extra vmargs we need to write to disk are the ones which cannot be set
+			// at runtime, which currently is just the vm errorfile.
+			PackrConfig.updateLauncherArgs(bootstrap, Collections.singleton("-XX:ErrorFile=" + CRASH_FILES.getAbsolutePath()));
+
+			REPO_DIR.mkdirs();
+
+			// Clean out old artifacts from the repository
+			clean(bootstrap.getArtifacts());
+
+			try
+			{
+				download(bootstrap);
+			}
+			catch (IOException ex)
+			{
+				log.error("unable to download artifacts", ex);
+				SwingUtilities.invokeLater(() -> FatalErrorDialog.showNetErrorWindow("downloading the client", ex));
+				return;
+			}
+
+			List<File> results = Arrays.stream(bootstrap.getArtifacts())
+				.map(dep -> new File(REPO_DIR, dep.getName()))
+				.collect(Collectors.toList());
+
+			SplashScreen.stage(.80, null, "Verifying");
+			try
+			{
+				verifyJarHashes(bootstrap.getArtifacts());
+			}
+			catch (VerificationException ex)
+			{
+				log.error("Unable to verify artifacts", ex);
+				SwingUtilities.invokeLater(() -> FatalErrorDialog.showNetErrorWindow("verifying downloaded files", ex));
+				return;
+			}
+
+			final Collection<String> clientArgs = getClientArgs(options);
+
+			if (log.isDebugEnabled())
+			{
+				clientArgs.add("--debug");
+			}
+
+			SplashScreen.stage(.90, "Starting the client", "");
+
+			// packr doesn't let us specify command line arguments
+			if (nojvm || options.has("nojvm"))
+			{
+				try
+				{
+					ReflectionLauncher.launch(results, clientArgs);
+				}
+				catch (MalformedURLException ex)
+				{
+					log.error("unable to launch client", ex);
+				}
+			}
+			else
+			{
+				try
+				{
+					JvmLauncher.launch(bootstrap, results, clientArgs, extraJvmParams);
+				}
+				catch (IOException ex)
+				{
+					log.error("unable to launch client", ex);
+				}
+			}
+		}
+		catch (Exception e)
+		{
+			log.error("Failure during startup", e);
+			SwingUtilities.invokeLater(() ->
+				new FatalErrorDialog("SanLite has encountered an unexpected error during startup.")
+					.open());
+		}
+		catch (Error e)
+		{
+			// packr seems to eat exceptions thrown out of main, so at least try to log it
+			log.error("Failure during startup", e);
+			throw e;
+		}
+		finally
+		{
+			SplashScreen.stop();
 		}
 	}
 
@@ -254,39 +371,38 @@ public class Launcher
 		}
 	}
 
-	private static Bootstrap getBootstrap() throws IOException, CertificateException, NoSuchAlgorithmException, InvalidKeyException, SignatureException
+	private static Bootstrap getBootstrap(boolean isStaging) throws IOException
 	{
-		URL bootstrapUrl;
-		URL signatureUrl = new URL(CLIENT_BOOTSTRAP_SHA256_URL);
+		try (InputStream inputStream = createBootstrapConnection(isStaging, false).getInputStream())
+		{
+			byte[] bytes = ByteStreams.toByteArray(inputStream);
+			return new Gson().fromJson(new InputStreamReader(new ByteArrayInputStream(bytes)), Bootstrap.class);
+		}
+		catch (IOException ex)
+		{
+			log.warn("Error downloading bootstrap, falling back to secondary URL", ex);
+			try (InputStream inputStream = createBootstrapConnection(isStaging, true).getInputStream())
+			{
+				byte[] bytes = ByteStreams.toByteArray(inputStream);
+				return new Gson().fromJson(new InputStreamReader(new ByteArrayInputStream(bytes)), Bootstrap.class);
+			}
+		}
+	}
 
+	private static URLConnection createBootstrapConnection(boolean isStaging, boolean isFallback) throws IOException
+	{
+		URLConnection conn = getBootstrapUrl(isStaging, isFallback).openConnection();
+		conn.setRequestProperty("User-Agent", USER_AGENT);
+		return conn;
+	}
+
+	private static URL getBootstrapUrl(boolean isStaging, boolean isFallback) throws IOException
+	{
 		if (isStaging)
 		{
-			bootstrapUrl = new URL(CLIENT_BOOTSTRAP_STAGING_URL);
+			return isFallback ? new URL(LauncherProperties.getBootstrapStagingFallback()) : new URL(LauncherProperties.getBootstrapStaging());
 		}
-		else
-		{
-			bootstrapUrl = new URL(CLIENT_BOOTSTRAP_LIVE_URL);
-		}
-
-		URLConnection conn = bootstrapUrl.openConnection();
-		URLConnection signatureConn = signatureUrl.openConnection();
-
-		conn.setRequestProperty("User-Agent", USER_AGENT);
-		signatureConn.setRequestProperty("User-Agent", USER_AGENT);
-
-		try (InputStream i = conn.getInputStream(); InputStream signatureIn = signatureConn.getInputStream())
-		{
-			byte[] bytes = ByteStreams.toByteArray(i);
-			byte[] signature = ByteStreams.toByteArray(signatureIn);
-
-			Certificate certificate = getCertificate();
-			Signature s = Signature.getInstance("SHA256withRSA");
-			s.initVerify(certificate);
-			s.update(bytes);
-
-			Gson g = new Gson();
-			return g.fromJson(new InputStreamReader(new ByteArrayInputStream(bytes)), Bootstrap.class);
-		}
+		return isFallback ? new URL(LauncherProperties.getBootstrapLiveFallback()) : new URL(LauncherProperties.getBootstrapLive());
 	}
 
 	private static Collection<String> getClientArgs(OptionSet options)
@@ -297,16 +413,15 @@ public class Launcher
 			clientArgs = (String) options.valueOf("clientargs");
 		}
 		return !Strings.isNullOrEmpty(clientArgs)
-				? new ArrayList<>(Splitter.on(' ').omitEmptyStrings().trimResults().splitToList(clientArgs))
-				: new ArrayList<>();
+			? new ArrayList<>(Splitter.on(' ').omitEmptyStrings().trimResults().splitToList(clientArgs))
+			: new ArrayList<>();
 	}
 
-	private static void download(LauncherFrame frame, Bootstrap bootstrap) throws IOException
+	private static void download(Bootstrap bootstrap) throws IOException
 	{
 		Artifact[] artifacts = bootstrap.getArtifacts();
-		int totalDownloadSize = getTotalArtifactsSize(artifacts);
-		int downloadedBytes = 0;
-		boolean isDownloading = false;
+		List<Artifact> toDownload = new ArrayList<>(artifacts.length);
+		int totalDownloadBytes = 0;
 
 		for (Artifact artifact : artifacts)
 		{
@@ -328,40 +443,38 @@ public class Launcher
 				continue;
 			}
 
-			if (!isDownloading)
-			{
-				frame.updateMessageLabelText("Downloading latest update");
-				isDownloading = true;
-			}
+			int downloadSize = artifact.getSize();
+
+			toDownload.add(artifact);
+			totalDownloadBytes += downloadSize;
+		}
+
+		final double START_PROGRESS = .15;
+		int downloaded = 0;
+		SplashScreen.stage(START_PROGRESS, "Downloading", "");
+
+		for (Artifact artifact : toDownload)
+		{
+			File dest = new File(REPO_DIR, artifact.getName());
+			final int total = downloaded;
 			log.debug("Downloading {}", artifact.getName());
 
-			URL url = new URL(artifact.getPath());
-			URLConnection conn = url.openConnection();
-			conn.setRequestProperty("User-Agent", USER_AGENT);
-			try (InputStream in = conn.getInputStream(); FileOutputStream fout = new FileOutputStream(dest))
+			try
 			{
-				int i;
-				byte[] buffer = new byte[1024 * 1024];
-				while ((i = in.read(buffer)) != -1)
+				final int totalBytes = totalDownloadBytes;
+				final byte[] jar = download(artifact.getPath(), artifact.getHash(), (completed) ->
+					SplashScreen.stage(START_PROGRESS, .80, null, artifact.getName(), total + completed, totalBytes, true));
+				downloaded += artifact.getSize();
+				try (FileOutputStream fout = new FileOutputStream(dest))
 				{
-					downloadedBytes += i;
-					fout.write(buffer, 0, i);
-					frame.progress(downloadedBytes, totalDownloadSize);
+					fout.write(jar);
 				}
 			}
+			catch (VerificationException e)
+			{
+				log.warn("unable to verify jar {}", artifact.getName(), e);
+			}
 		}
-		// Set progress bar to 100% if all files are verified and none updated
-		frame.progress(100, 100);
-	}
-
-	private static int getTotalArtifactsSize(Artifact[] artifacts)
-	{
-		int totalSize = 0;
-		for (Artifact artifact : artifacts)
-		{
-			totalSize += artifact.getSize();
-		}
-		return totalSize;
 	}
 
 	private static void clean(Artifact[] artifacts)
@@ -374,8 +487,8 @@ public class Launcher
 		}
 
 		Set<String> artifactNames = Arrays.stream(artifacts)
-				.map(Artifact::getName)
-				.collect(Collectors.toSet());
+			.map(Artifact::getName)
+			.collect(Collectors.toSet());
 
 		for (File file : existingFiles)
 		{
@@ -405,16 +518,13 @@ public class Launcher
 			}
 			catch (IOException e)
 			{
-				throw new VerificationException("Unable to hash file", e);
+				throw new VerificationException("unable to hash file", e);
 			}
 
 			if (!fileHash.equals(expectedHash))
 			{
-				if (enforceDependencyHashing)
-				{
-					log.warn("Expected {} for {} but got {}", expectedHash, artifact.getName(), fileHash);
-					throw new VerificationException("Expected " + expectedHash + " for " + artifact.getName() + " but got " + fileHash);
-				}
+				log.warn("Expected {} for {} but got {}", expectedHash, artifact.getName(), fileHash);
+				throw new VerificationException("Expected " + expectedHash + " for " + artifact.getName() + " but got " + fileHash);
 			}
 
 			log.info("Verified hash of {}", artifact.getName());
@@ -427,9 +537,95 @@ public class Launcher
 		return Files.asByteSource(file).hash(sha256).toString();
 	}
 
-	private static Certificate getCertificate() throws CertificateException
+	@VisibleForTesting
+	static int compareVersion(String a, String b)
 	{
-		CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-		return certFactory.generateCertificate(Launcher.class.getResourceAsStream("/runelite.crt"));
+		Pattern tok = Pattern.compile("[^0-9a-zA-Z]");
+		return Arrays.compare(tok.split(a), tok.split(b), (x, y) ->
+		{
+			Integer ix = null;
+			try
+			{
+				ix = Integer.parseInt(x);
+			}
+			catch (NumberFormatException e)
+			{
+			}
+
+			Integer iy = null;
+			try
+			{
+				iy = Integer.parseInt(y);
+			}
+			catch (NumberFormatException e)
+			{
+			}
+
+			if (ix == null && iy == null)
+			{
+				return x.compareToIgnoreCase(y);
+			}
+
+			if (ix == null)
+			{
+				return -1;
+			}
+			if (iy == null)
+			{
+				return 1;
+			}
+
+			if (ix > iy)
+			{
+				return 1;
+			}
+			if (ix < iy)
+			{
+				return -1;
+			}
+
+			return 0;
+		});
+	}
+
+	private static byte[] download(String path, String hash, IntConsumer progress) throws IOException, VerificationException
+	{
+		HashFunction hashFunction = Hashing.sha256();
+		Hasher hasher = hashFunction.newHasher();
+		ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+
+		URL url = new URL(path);
+		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+		conn.setRequestProperty("User-Agent", USER_AGENT);
+		conn.getResponseCode();
+
+		InputStream err = conn.getErrorStream();
+		if (err != null)
+		{
+			err.close();
+			throw new IOException("Unable to download " + path + " - " + conn.getResponseMessage());
+		}
+
+		int downloaded = 0;
+		try (InputStream in = conn.getInputStream())
+		{
+			int i;
+			byte[] buffer = new byte[1024 * 1024];
+			while ((i = in.read(buffer)) != -1)
+			{
+				byteArrayOutputStream.write(buffer, 0, i);
+				hasher.putBytes(buffer, 0, i);
+				downloaded += i;
+				progress.accept(downloaded);
+			}
+		}
+
+		HashCode hashCode = hasher.hash();
+		if (!hash.equals(hashCode.toString()))
+		{
+			throw new VerificationException("Unable to verify resource " + path + " - expected " + hash + " got " + hashCode.toString());
+		}
+
+		return byteArrayOutputStream.toByteArray();
 	}
 }

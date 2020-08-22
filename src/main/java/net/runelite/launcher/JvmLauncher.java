@@ -37,7 +37,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import static net.runelite.launcher.Launcher.CLIENT_MAIN_CLASS;
 import net.runelite.launcher.beans.Bootstrap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +64,7 @@ class JvmLauncher
 
 		if (!Files.exists(javaPath))
 		{
-			throw new FileNotFoundException("Java executable not found in directory \"" + javaPath.getParent() + "\"");
+			throw new FileNotFoundException("java executable not found in directory \"" + javaPath.getParent() + "\"");
 		}
 
 		return javaPath.toAbsolutePath().toString();
@@ -104,22 +103,11 @@ class JvmLauncher
 		arguments.add("-cp");
 		arguments.add(classPath.toString());
 
-		String[] jvmArguments;
-		String jvmVersion = System.getProperty("java.version");
-		if (jvmVersion.startsWith("1."))
-		{
-			logger.info("Using Java version 1.x");
-			jvmArguments = bootstrap.getClientJvmArguments();
-		}
-		else
-		{
-			logger.info("Using Java version 9+");
-			jvmArguments = bootstrap.getClientJvm9Arguments();
-		}
+		String[] jvmArguments = bootstrap.getClientJvm9Arguments();
 		arguments.addAll(Arrays.asList(jvmArguments));
 		arguments.addAll(extraJvmParams);
 
-		arguments.add(CLIENT_MAIN_CLASS);
+		arguments.add(LauncherProperties.getMain());
 		arguments.addAll(clientArgs);
 
 		logger.info("Running {}", arguments);
@@ -127,6 +115,8 @@ class JvmLauncher
 		ProcessBuilder builder = new ProcessBuilder(arguments.toArray(new String[0]));
 		builder.redirectErrorStream(true);
 		Process process = builder.start();
+
+		SplashScreen.stop();
 
 		if (log.isDebugEnabled())
 		{

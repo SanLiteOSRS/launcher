@@ -10,5 +10,3 @@ project.properties
 .classpath
 dependency-reduced-pom.xml
 *.exe
-*.zip
-!SanLiteSetup.exe
