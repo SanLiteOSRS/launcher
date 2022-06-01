@@ -2,20 +2,18 @@
 
 set -e
 
-JDK_VER="11.0.7"
-JDK_BUILD="10"
-PACKR_VERSION="runelite-1.0"
+JDK_VER="11.0.14.1"
+JDK_BUILD="1"
+PACKR_VERSION="runelite-1.4"
 
 SIGNING_IDENTITY="Developer ID Application"
-ALTOOL_USER="user@icloud.com"
-ALTOOL_PASS="@keychain:altool-password"
 
 if ! [ -f OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz ] ; then
     curl -Lo OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz \
-        https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-${JDK_VER}%2B${JDK_BUILD}/OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz
+        https://github.com/adoptium/temurin11-binaries/releases/download/jdk-${JDK_VER}%2B${JDK_BUILD}/OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz
 fi
 
-echo "931a81f4bed38c48b364db57d4ebdd6e4b4ea1466e9bd0eaf8e0f1e47c4569e9  OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz" | shasum -c
+echo "1b2f792ad05af9dba876db962c189527e645b48f50ceb842b4e39169de553303  OpenJDK11U-jre_x64_mac_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz" | shasum -c
 
 # packr requires a "jdk" and pulls the jre from it - so we have to place it inside
 # the jdk folder at jre/
@@ -37,29 +35,10 @@ if ! [ -f packr_${PACKR_VERSION}.jar ] ; then
         https://github.com/runelite/packr/releases/download/${PACKR_VERSION}/packr.jar
 fi
 
-echo "18b7cbaab4c3f9ea556f621ca42fbd0dc745a4d11e2a08f496e2c3196580cd53  packr_${PACKR_VERSION}.jar" | shasum -c
+echo "f51577b005a51331b822a18122ce08fca58cf6fee91f071d5a16354815bbe1e3  packr_${PACKR_VERSION}.jar" | shasum -c
 
 java -jar packr_${PACKR_VERSION}.jar \
-    --platform \
-    mac \
-    --icon \
-    packr/runelite.icns \
-    --jdk \
-    osx-jdk \
-    --executable \
-    SanLite \
-    --classpath \
-    target/SanLite.jar \
-    --mainclass \
-    net.runelite.launcher.Launcher \
-    --vmargs \
-    Drunelite.launcher.nojvm=true \
-    Xmx512m \
-    Xss2m \
-    XX:CompileThreshold=1500 \
-    Djna.nosys=true \
-    --output \
-    native-osx/SanLite.app
+    packr/macos-x64-config.json
 
 cp target/filtered-resources/Info.plist native-osx/SanLite.app/Contents
 
@@ -74,6 +53,14 @@ codesign -f -s "${SIGNING_IDENTITY}" --entitlements osx/signing.entitlements --o
 # note we use Adam-/create-dmg as upstream does not support UDBZ
 create-dmg --format UDBZ native-osx/SanLite.app native-osx/ || true
 
-mv native-osx/SanLite\ *.dmg native-osx/SanLite.dmg
+mv native-osx/SanLite\ *.dmg native-osx/SanLite-x64.dmg
 
-xcrun altool --notarize-app --username "${ALTOOL_USER}" --password "${ALTOOL_PASS}" --primary-bundle-id SanLite --file native-osx/SanLite.dmg || true
+if ! hdiutil imageinfo native-osx/SanLite-x64.dmg | grep -q "Format: UDBZ" ; then
+    echo "Format of resulting dmg was not UDBZ, make sure your create-dmg has support for --format"
+    exit 1
+fi
+
+# Notarize app
+if xcrun notarytool submit native-osx/RuneLite-x64.dmg --wait --keychain-profile "AC_PASSWORD" ; then
+    xcrun stapler staple native-osx/RuneLite-x64.dmg
+fi

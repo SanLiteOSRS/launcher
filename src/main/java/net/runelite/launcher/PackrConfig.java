@@ -32,6 +32,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -46,7 +47,7 @@ import net.runelite.launcher.beans.Bootstrap;
 @Slf4j
 class PackrConfig
 {
-	// Update the packr vmargs
+	// Update the packr config
 	static void updateLauncherArgs(Bootstrap bootstrap, Collection<String> extraJvmArgs)
 	{
 		File configFile = new File("config.json").getAbsoluteFile();
@@ -84,18 +85,20 @@ class PackrConfig
 		args.addAll(extraJvmArgs);
 
 		config.put("vmArgs", args);
+		config.put("env", getEnv(bootstrap));
 
-		File tmpFile = new File("config.json.tmp");
 		try
 		{
-			try (FileOutputStream fout = new FileOutputStream(tmpFile))
+			File tmpFile = File.createTempFile("sanlite", null);
+
+			try (FileOutputStream fout = new FileOutputStream(tmpFile);
+				FileChannel channel = fout.getChannel();
+				PrintWriter writer = new PrintWriter(fout))
 			{
-				fout.getChannel().lock();
-				try (PrintWriter writer = new PrintWriter(fout))
-				{
-					writer.write(gson.toJson(config));
-				}
-				// FileOutputStream.close() closes the associated channel, which frees the lock
+				channel.lock();
+				writer.write(gson.toJson(config));
+				channel.force(true);
+				// FileChannel.close() frees the lock
 			}
 
 			try
@@ -111,29 +114,56 @@ class PackrConfig
 		catch (IOException e)
 		{
 			log.warn("error updating packr vm args!", e);
-			tmpFile.delete(); // best effort
 		}
 	}
 
 	private static String[] getArgs(Bootstrap bootstrap)
 	{
+		return Launcher.isJava17() ? getArgsJvm17(bootstrap) : getArgsJvm11(bootstrap);
+	}
+
+	private static String[] getArgsJvm17(Bootstrap bootstrap)
+	{
 		switch (OS.getOs())
 		{
 			case Windows:
-				if (bootstrap.getLauncherJvm11WindowsArguments() != null)
-				{
-					return bootstrap.getLauncherJvm11WindowsArguments();
-				}
-				return bootstrap.getLauncherJvm11Arguments();
+				String[] args = bootstrap.getLauncherJvm17WindowsArguments();
+				return args != null ? args : bootstrap.getLauncherJvm17Arguments();
 			case MacOS:
-				if (bootstrap.getLauncherJvm11MacArguments() != null)
-				{
-					return bootstrap.getLauncherJvm11MacArguments();
-				}
-				return bootstrap.getLauncherJvm11Arguments();
+				args = bootstrap.getLauncherJvm17MacArguments();
+				return args != null ? args : bootstrap.getLauncherJvm17Arguments();
+			default:
+				return bootstrap.getLauncherJvm17Arguments();
+		}
+	}
 
+	private static String[] getArgsJvm11(Bootstrap bootstrap)
+	{
+		switch (OS.getOs())
+		{
+			case Windows:
+				String[] args = bootstrap.getLauncherJvm11WindowsArguments();
+				return args != null ? args : bootstrap.getLauncherJvm11Arguments();
+			case MacOS:
+				args = bootstrap.getLauncherJvm11MacArguments();
+				return args != null ? args : bootstrap.getLauncherJvm11Arguments();
 			default:
 				return bootstrap.getLauncherJvm11Arguments();
+		}
+	}
+
+	private static Map<String, String> getEnv(Bootstrap bootstrap)
+	{
+		switch (OS.getOs())
+		{
+			case Windows:
+				return bootstrap.getLauncherWindowsEnv();
+			case MacOS:
+				return bootstrap.getLauncherMacEnv();
+			case Linux:
+				return bootstrap.getLauncherLinuxEnv();
+			default:
+				return null;
 		}
 	}
 }
