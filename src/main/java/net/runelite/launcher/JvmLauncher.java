@@ -74,7 +74,8 @@ class JvmLauncher
 		Bootstrap bootstrap,
 		List<File> results,
 		Collection<String> clientArgs,
-		List<String> extraJvmParams) throws IOException
+		List<String> jvmProps,
+		List<String> jvmArgs) throws IOException
 	{
 		StringBuilder classPath = new StringBuilder();
 		for (File f : results)
@@ -86,6 +87,7 @@ class JvmLauncher
 
 			classPath.append(f.getAbsolutePath());
 		}
+
 		String javaExePath;
 		try
 		{
@@ -97,15 +99,18 @@ class JvmLauncher
 			return;
 		}
 
-
 		List<String> arguments = new ArrayList<>();
 		arguments.add(javaExePath);
 		arguments.add("-cp");
 		arguments.add(classPath.toString());
 
-		String[] jvmArguments = bootstrap.getClientJvm9Arguments();
-		arguments.addAll(Arrays.asList(jvmArguments));
-		arguments.addAll(extraJvmParams);
+		String[] jvmArguments = getJvmArguments(bootstrap);
+		if (jvmArguments != null)
+		{
+			arguments.addAll(Arrays.asList(jvmArguments));
+		}
+		arguments.addAll(jvmProps);
+		arguments.addAll(jvmArgs);
 
 		arguments.add(LauncherProperties.getMain());
 		arguments.addAll(clientArgs);
@@ -125,6 +130,28 @@ class JvmLauncher
 			{
 				System.out.println(line);
 			}
+		}
+	}
+
+	private static String[] getJvmArguments(Bootstrap bootstrap)
+	{
+		if (Launcher.isJava17())
+		{
+			switch (OS.getOs())
+			{
+				case Windows:
+					String[] args = bootstrap.getClientJvm17WindowsArguments();
+					return args != null ? args : bootstrap.getClientJvm17Arguments();
+				case MacOS:
+					args = bootstrap.getClientJvm17MacArguments();
+					return args != null ? args : bootstrap.getClientJvm17Arguments();
+				default:
+					return bootstrap.getClientJvm17Arguments();
+			}
+		}
+		else
+		{
+			return bootstrap.getClientJvm9Arguments();
 		}
 	}
 }

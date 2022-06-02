@@ -29,12 +29,13 @@
 
 	<groupId>net.runelite</groupId>
 	<artifactId>launcher</artifactId>
-	<version>2.0.0</version>
+	<version>2.4.4</version>
 	<name>SanLite Launcher</name>
 	<description>Launcher for SanLite client</description>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.build.outputTimestamp>1</project.build.outputTimestamp>
 
 		<main.class>net.runelite.launcher.Launcher</main.class>
 	</properties>
@@ -80,10 +81,12 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
+			<version>1.7.25</version>
 		</dependency>
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
+			<version>1.2.9</version>
 		</dependency>
 		<dependency>
 			<groupId>net.sf.jopt-simple</groupId>
@@ -96,20 +99,48 @@
 			<version>2.8.5</version>
 		</dependency>
 		<dependency>
+			<groupId>com.google.code.findbugs</groupId>
+			<artifactId>jsr305</artifactId>
+			<version>3.0.2</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
 			<version>23.2-jre</version>
+			<exclusions>
+				<!--
+				compile time annotations for static analysis in Guava
+				https://github.com/google/guava/wiki/UseGuavaInYourBuild#what-about-guavas-own-dependencies
+				-->
+				<exclusion>
+					<groupId>com.google.code.findbugs</groupId>
+					<artifactId>jsr305</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.google.errorprone</groupId>
+					<artifactId>error_prone_annotations</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.google.j2objc</groupId>
+					<artifactId>j2objc-annotations</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>animal-sniffer-annotations</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-			<version>1.16.22</version>
+			<version>1.18.20</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
-			<groupId>net.runelite</groupId>
-			<artifactId>archive-patcher</artifactId>
-			<version>1.0</version>
+			<groupId>net.runelite.archive-patcher</groupId>
+			<artifactId>archive-patcher-applier</artifactId>
+			<version>1.2</version>
 		</dependency>
 
 		<dependency>
@@ -119,18 +150,6 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>ch.qos.logback</groupId>
-				<artifactId>logback-parent</artifactId>
-				<version>1.2.3</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 
 	<build>
 		<finalName>SanLite</finalName>
@@ -165,17 +184,21 @@
 				<version>3.8.1</version>
 				<configuration>
 					<release>11</release>
+					<compilerArgs>
+						<arg>-h</arg>
+						<arg>target/headers</arg>
+					</compilerArgs>
 				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.1.2</version>
+				<version>3.2.0</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
-				<version>3.2.1</version>
+				<version>3.2.3</version>
 				<executions>
 					<execution>
 						<phase>package</phase>
@@ -263,18 +286,6 @@
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>io.github.zlika</groupId>
-				<artifactId>reproducible-build-maven-plugin</artifactId>
-				<version>0.7</version>
-				<executions>
-					<execution>
-						<goals>
-							<goal>strip-jar</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-			<plugin>
 				<groupId>net.runelite.maven</groupId>
 				<artifactId>dependency-lock-plugin</artifactId>
 				<version>1.1</version>
@@ -296,12 +307,12 @@
 						<lock>
 							<groupId>ch.qos.logback</groupId>
 							<artifactId>logback-classic</artifactId>
-							<hash>SHA-256:fb53f8539e7fcb8f093a56e138112056ec1dc809ebb020b59d8a36a5ebac37e0</hash>
+							<hash>SHA-256:ad745cc243805800d1ebbf5b7deba03b37c95885e6bce71335a73f7d6d0f14ee</hash>
 						</lock>
 						<lock>
 							<groupId>ch.qos.logback</groupId>
 							<artifactId>logback-core</artifactId>
-							<hash>SHA-256:5946d837fe6f960c02a53eda7a6926ecc3c758bbdd69aa453ee429f858217f22</hash>
+							<hash>SHA-256:4a9ef7ed809b1fbc6992bf87d404087c247e7a9766e25bb84377b58ed5c9eb58</hash>
 						</lock>
 						<lock>
 							<groupId>net.sf.jopt-simple</groupId>
@@ -321,7 +332,7 @@
 						<lock>
 							<groupId>com.google.code.findbugs</groupId>
 							<artifactId>jsr305</artifactId>
-							<hash>SHA-256:905721a0eea90a81534abb7ee6ef4ea2e5e645fa1def0a5cd88402df1b46c9ed</hash>
+							<hash>SHA-256:766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7</hash>
 						</lock>
 						<lock>
 							<groupId>com.google.errorprone</groupId>
@@ -341,12 +352,7 @@
 						<lock>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
-							<hash>SHA-256:9cadc430e156950d7deb6f226d74c5e2aacb6cf21b7ef60638e6af4369e7bb8d</hash>
-						</lock>
-						<lock>
-							<groupId>io.github.zlika</groupId>
-							<artifactId>reproducible-build-maven-plugin</artifactId>
-							<hash>SHA-256:ecdd21e005f64431fdadf04bbf00744e7afaa0d70515ab217510b9c8d20e1915</hash>
+							<hash>SHA-256:ce947be6c2fbe759fbbe8ef3b42b6825f814c98c8853f1013f2d9630cedf74b0</hash>
 						</lock>
 						<lock>
 							<groupId>net.runelite.maven</groupId>
@@ -354,9 +360,9 @@
 							<hash>SHA-256:3a03d05adcbb095650e0a8e01b704ef214b0ba98e25d38835f70224b5fba68c2</hash>
 						</lock>
 						<lock>
-							<groupId>net.runelite</groupId>
-							<artifactId>archive-patcher</artifactId>
-							<hash>SHA-256:3dbd9eb9104e46979f2df85108096241780969786fd7c298ac22c83fdf66579f</hash>
+							<groupId>net.runelite.archive-patcher</groupId>
+							<artifactId>archive-patcher-applier</artifactId>
+							<hash>SHA-256:ce932f3eeeb31021ae4d62108fdab23e18b7efd79833e4cd050e2d78d78c3347</hash>
 						</lock>
 					</locks>
 				</configuration>

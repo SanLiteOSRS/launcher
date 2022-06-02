@@ -24,6 +24,7 @@
  */
 package net.runelite.launcher;
 
+import javax.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -38,28 +39,32 @@ public class OS
 
 	static
 	{
-		final String OS = System
+		final String os = System
 			.getProperty("os.name", "generic")
 			.toLowerCase();
+		DETECTED_OS = parseOs(os);
+		log.debug("Detect OS: {}", DETECTED_OS);
+	}
 
-		if ((OS.contains("mac")) || (OS.contains("darwin")))
+	static OSType parseOs(@Nonnull String os)
+	{
+		os = os.toLowerCase();
+		if ((os.contains("mac")) || (os.contains("darwin")))
 		{
-			DETECTED_OS = OSType.MacOS;
+			return OSType.MacOS;
 		}
-		else if (OS.contains("win"))
+		else if (os.contains("win"))
 		{
-			DETECTED_OS = OSType.Windows;
+			return OSType.Windows;
 		}
-		else if (OS.contains("nux"))
+		else if (os.contains("linux"))
 		{
-			DETECTED_OS = OSType.Linux;
+			return OSType.Linux;
 		}
 		else
 		{
-			DETECTED_OS = OSType.Other;
+			return OSType.Other;
 		}
-
-		log.debug("Detect OS: {}", DETECTED_OS);
 	}
 
 	public static OSType getOs()

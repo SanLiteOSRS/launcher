@@ -10,3 +10,13 @@ project.properties
 .classpath
 dependency-reduced-pom.xml
 *.exe
+native-win32
+native-win64
+win32-jdk
+win64-jdk
+linux-jdk
+native-linux-x86_64
+packr*.jar
+*.AppImage
+*.zip
+*.tar.gz

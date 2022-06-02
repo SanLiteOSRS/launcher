@@ -2,17 +2,19 @@
 
 set -e
 
-JDK_VER="11.0.7"
+JDK_VER="11.0.8"
 JDK_BUILD="10"
-PACKR_VERSION="runelite-1.0"
+PACKR_VERSION="runelite-1.3"
 APPIMAGE_VERSION="12"
+
+umask 022
 
 if ! [ -f OpenJDK11U-jre_x64_linux_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz ] ; then
     curl -Lo OpenJDK11U-jre_x64_linux_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz \
         https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-${JDK_VER}%2B${JDK_BUILD}/OpenJDK11U-jre_x64_linux_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz
 fi
 
-echo "74b493dd8a884dcbee29682ead51b182d9d3e52b40c3d4cbb3167c2fd0063503 OpenJDK11U-jre_x64_linux_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz" | sha256sum -c
+echo "98615b1b369509965a612232622d39b5cefe117d6189179cbad4dcef2ee2f4e1 OpenJDK11U-jre_x64_linux_hotspot_${JDK_VER}_${JDK_BUILD}.tar.gz" | sha256sum -c
 
 # packr requires a "jdk" and pulls the jre from it - so we have to place it inside
 # the jdk folder at jre/
@@ -27,39 +29,25 @@ if ! [ -f packr_${PACKR_VERSION}.jar ] ; then
         https://github.com/runelite/packr/releases/download/${PACKR_VERSION}/packr.jar
 fi
 
-echo "18b7cbaab4c3f9ea556f621ca42fbd0dc745a4d11e2a08f496e2c3196580cd53  packr_${PACKR_VERSION}.jar" | sha256sum -c
+echo "f200fb7088dbb5e61e0835fe7b0d7fc1310beda192dacd764927567dcd7c4f0f  packr_${PACKR_VERSION}.jar" | sha256sum -c
+
+# Note: Host umask may have checked out this directory with g/o permissions blank
+chmod -R u=rwX,go=rX appimage
+# ...ditto for the build process
+chmod 644 target/SanLite.jar
 
 java -jar packr_${PACKR_VERSION}.jar \
-    --platform \
-    linux64 \
-    --jdk \
-    linux-jdk \
-    --executable \
-    SanLite \
-    --classpath \
-    target/SanLite.jar \
-    --mainclass \
-    net.runelite.launcher.Launcher \
-    --vmargs \
-    Drunelite.launcher.nojvm=true \
-    Xmx512m \
-    Xss2m \
-    XX:CompileThreshold=1500 \
-    Djna.nosys=true \
-    --output \
-    native-linux/SanLite.AppDir/ \
-    --resources \
-    target/filtered-resources/runelite.desktop \
-    appimage/runelite.png
+    packr/linux-x64-config.json
 
-pushd native-linux/SanLite.AppDir
+pushd native-linux-x86_64/SanLite.AppDir
 mkdir -p jre/lib/amd64/server/
 ln -s ../../server/libjvm.so jre/lib/amd64/server/ # packr looks for libjvm at this hardcoded path
-popd
 
 # Symlink AppRun -> SanLite
-pushd native-linux/SanLite.AppDir/
 ln -s SanLite AppRun
+
+# Ensure SanLite is executable to all users
+chmod 755 SanLite
 popd
 
 if ! [ -f appimagetool-x86_64.AppImage ] ; then
@@ -71,5 +59,5 @@ fi
 echo "d918b4df547b388ef253f3c9e7f6529ca81a885395c31f619d9aaf7030499a13  appimagetool-x86_64.AppImage" | sha256sum -c
 
 ./appimagetool-x86_64.AppImage \
-	native-linux/SanLite.AppDir/ \
-	native-linux/SanLite.AppImage
+	native-linux-x86_64/SanLite.AppDir/ \
+	native-linux-x86_64/SanLite.AppImage

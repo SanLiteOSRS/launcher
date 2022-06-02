@@ -41,6 +41,7 @@ public class LauncherProperties
 	private static final String BOOTSTRAP_LIVE_FALLBACK = "runelite.bootstrap.fallback";
 	private static final String BOOTSTRAP_STAGING = "runelite.bootstrap.staging";
 	private static final String BOOTSTRAP_STAGING_FALLBACK = "runelite.bootstrap.staging.fallback";
+	private static final String BOOTSTRAPSIG = "runelite.bootstrapsig";
 	private static final String MAIN = "runelite.main";
 
 	private static final Properties properties = new Properties();
@@ -107,6 +108,11 @@ public class LauncherProperties
 	public static String getBootstrapStagingFallback()
 	{
 		return properties.getProperty(BOOTSTRAP_STAGING_FALLBACK);
+	}
+
+	public static String getBootstrapSig()
+	{
+		return properties.getProperty(BOOTSTRAPSIG);
 	}
 
 	public static String getMain()
